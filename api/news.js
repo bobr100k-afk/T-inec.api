@@ -10,15 +10,14 @@ module.exports = async (req, res) => {
     }
 
     try {
-        // Загружаем легкий RSS-поток новостей по нашему региону (Моравско-Силезский край)
-        const { data } = await axios.get('https://www.idnes.cz/ostrava/zpravy.rss', {
+        // Официальный, стабильный RSS-канал iDNES (Острава / Тшинец)
+        const { data } = await axios.get('https://servis.idnes.cz/rss.aspx?c=ostrava', {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
-            timeout: 7000
+            timeout: 8000
         });
 
-        // Читаем как XML
         const $ = cheerio.load(data, { xmlMode: true });
         const articles = [];
 
@@ -32,10 +31,10 @@ module.exports = async (req, res) => {
             let desc = $item.find('description').text().replace(/<\/?[>]+(>\vert{}$)/g, "").trim();
 
             if (!desc) {
-                desc = "Aktuální zpráva z regionu.";
+                desc = "Aktuální zpravodajství z regionu.";
             }
 
-            // Конвертируем дату из RSS в формат ДД.ММ.ГГГГ
+            // Форматируем дату из RSS
             let dateStr = "";
             try {
                 const dateObj = new Date(pubDateStr);
@@ -57,9 +56,9 @@ module.exports = async (req, res) => {
             if (title && link) {
                 articles.push({
                     title,
-                    desc: desc.length > 160 ? desc.substring(0, 160) + '...' : desc,
+                    desc: desc.length > 150 ? desc.substring(0, 150) + '...' : desc,
                     link,
-                    tag: 'IDNES / RSS',
+                    tag: 'IDNES / OSTRAVA & TŘINEC',
                     date: dateStr
                 });
             }
@@ -70,7 +69,7 @@ module.exports = async (req, res) => {
     } catch (error) {
         return res.status(500).json({ 
             success: false, 
-            error: 'RSS fetch failed', 
+            error: 'Failed to fetch RSS', 
             details: error.message 
         });
     }
