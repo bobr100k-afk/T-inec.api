@@ -9,112 +9,66 @@ module.exports = async (req, res) => {
     }
 
     try {
-        // Опрашиваем ehutnik.cz через нативный fetch
-        const response = await fetch('https://ehutnik.cz/', {
+        // Парсим статьи Gorolweb (раздел Třinec)
+        const response = await fetch('https://www.gorolweb.cz/kategorie/regiony/trinec/', {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'cs-CZ,cs;q=0.9'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             }
         });
 
-        if (!response.ok) {
-            throw new Error(`HTTP status ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Status ${response.status}`);
 
         const html = await response.text();
         const $ = cheerio.load(html);
         const articles = [];
 
-        // Собираем все ссылки и заголовки новостей
-        $('a').each((i, el) => {
-            const $a =$(el);
-            const title = $a.text().replace(/\s+/g, ' ').trim();
-            let link = $a.attr('href') || '';
+        // Ищем блоки постов на Gorolweb
+        $('article, .post, .entry-title').each((i, el) => {
+            if (articles.length >= 15) return;
 
-            if (title.length > 18 && link.length > 2 && !link.includes('javascript') && !link.includes('#')) {
-                if (link.startsWith('/')) {
-                    link = `https://ehutnik.cz${link}`;
+            const $item =$(el);
+            const $link =$item.find('a').first().length ? $item.find('a').first() :$item.closest('a');
+            
+            const title = $link.text().trim() \vert{}\vert{}$item.find('h2, h3').text().trim();
+            let url = $link.attr('href') || '';
+
+            // Извлекаем точную дату публикации
+            const $parent =$item.closest('article, .post, .td_module_wrap, div');
+            const timeText = $parent.find('time, .entry-date, .td-post-date, .date').text().trim();
+            
+            // Фильтруем заголовок
+            if (title.length > 15 && url.length > 5) {
+                let desc = $parent.find('.entry-excerpt, p, .td-excerpt').text().trim();
+                if (!desc || desc === title) {
+                    desc = 'Aktuální zpráva z Třince a okolí (Gorolweb Zpravodajství).';
                 }
 
-                const $box =$a.closest('article, .post, div, li');
-                const fullText = $box.text().replace(/\s+/g, ' ').trim();
-
-                // Ищем точную дату формата ДД.ММ.ГГГГ или ДД. ММ. ГГГГ
-                const dateMatch = fullText.match(/\b(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\b/);
-                let dateStr = '';
+                let dateStr = timeText;
+                const matchDate = (timeText + ' ' + $parent.text()).match(/\b(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\b/);
                 
-                if (dateMatch) {
-                    dateStr = `${dateMatch[1].padStart(2, '0')}.${dateMatch[2].padStart(2, '0')}.${dateMatch[3]}`;
-                } else {
-                    const d = new Date();
-                    dateStr = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+                if (matchDate) {
+                    dateStr = `${matchDate[1].padStart(2, '0')}.${matchDate[2].padStart(2, '0')}.${matchDate[3]}`;
+                } else if (!dateStr) {
+                    const now = new Date();
+                    dateStr = `${String(now.getDate()).padStart(2, '0')}.${String(now.getMonth() + 1).padStart(2, '0')}.${now.getFullYear()}`;
                 }
 
-                // Краткое описание
-                let desc = $box.find('p').first().text().replace(/\s+/g, ' ').trim();
-                if (!desc || desc.length < 15 || desc === title) {
-                    desc = 'Aktuální zpravodajství a informace z regionu Třinecka na eHutník.cz.';
-                }
-
-                const exists = articles.some(item => item.title === title || item.link === link);
-                if (!exists && articles.length < 25) {
+                const exists = articles.some(a => a.title === title || a.link === url);
+                if (!exists) {
                     articles.push({
                         title: title,
-                        desc: desc.length > 170 ? desc.substring(0, 170) + '...' : desc,
-                        link: link,
-                        tag: 'EHÚTNÍK / TŘINEC',
+                        desc: desc.length > 150 ? desc.substring(0, 150) + '...' : desc,
+                        link: url,
+                        tag: 'GOROLWEB / TŘINEC',
                         date: dateStr
                     });
                 }
             }
         });
 
-        if (articles.length === 0) {
-            throw new Error('Не удалось найти статьи на странице');
-        }
-
         return res.status(200).json({ success: true, count: articles.length, articles });
 
     } catch (err) {
-        // Резервный ответ от сервера с правильным форматом
-        const d = new Date();
-        const todayStr = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
-
-        return res.status(200).json({
-            success: true,
-            fallback: true,
-            count: 4,
-            articles: [
-                {
-                    title: "Knihovna Třinec byla vyhlášena Městskou knihovnou roku",
-                    desc: "Třinecká knihovna obdržela prestižní ocenění za rozvoj moderních komunitních služeb a digitalizaci fondu.",
-                    link: "https://ehutnik.cz/",
-                    tag: "TŘINEC KULTURA",
-                    date: todayStr
-                },
-                {
-                    title: "Oceláři Třinec připravují další utkání ve Werk Areně",
-                    desc: "Hokejisté Třince pokračují v sezóně. Klub spouští předprodej lístků na nadcházející domácí zápasy.",
-                    link: "https://ehutnik.cz/",
-                    tag: "WERK ARENA / SPORT",
-                    date: todayStr
-                },
-                {
-                    title: "Plánovaná oprava silničního úseku a uzávěra v Lyžbicích",
-                    desc: "Technické služby města Třince upozorňují řidiče na dopravní omezení v sídlištní zóně Lyžbice.",
-                    link: "https://ehutnik.cz/",
-                    tag: "LYŽBICE / DOPRAVA",
-                    date: todayStr
-                },
-                {
-                    title: "Investice do městského lesoparku: Obnova zeleně schválena",
-                    desc: "Projekt zahrnuje výsadbu nových stromů a instalaci osvětlení v odpočinkové zóně Třince.",
-                    link: "https://ehutnik.cz/",
-                    tag: "TŘINEC ROZVOJ",
-                    date: todayStr
-                }
-            ]
-        });
+        return res.status(500).json({ success: false, error: err.message });
     }
 };
