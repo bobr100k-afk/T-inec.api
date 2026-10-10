@@ -12,40 +12,62 @@ module.exports = async (req, res) => {
     try {
         const { data } = await axios.get('https://ehutnik.cz/', {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Language': 'cs-CZ,cs;q=0.9,en;q=0.8'
             },
-            timeout: 8000
+            timeout: 10000
         });
 
         const $ = cheerio.load(data);
         const articles = [];
 
-        $('article, .post, .news-item').each((i, element) => {
-            if (i >= 12) return;
+        // Универсальный поиск по всем ссылкам и карточкам eHutník
+        $('a').each((i, element) => {
+            const $link =$(element);
+            const title = $link.text().trim();
+            let href = $link.attr('href') || '';
 
-            const titleElement = $(element).find('h2, h3, .entry-title, .post-title').first();
-            const title = titleElement.text().trim();
-            
-            const linkElement = $(element).find('a').first();
-            let link = linkElement.attr('href') || 'https://ehutnik.cz/';
-            if (link.startsWith('/')) {
-                link = `https://ehutnik.cz${link}`;
-            }
+            // Фильтруем заголовок (длиной от 15 символов, чтобы исключить меню и кнопки)
+            if (title.length > 15 && href.length > 3) {
+                if (href.startsWith('/')) {
+                    href = `https://ehutnik.cz${href}`;
+                }
 
-            const descElement = $(element).find('p, .entry-summary, .post-excerpt').first();
-            const desc = descElement.text().trim() || 'Zpráva z regionu Třinecko.';
+                // Ищем даты внутри родительских тегов
+                const $parent =$link.closest('div, li, article, section, p');
+                let dateStr = '';
+                
+                // Поиск тегов времени или текста с датой
+                const timeText = $parent.find('time, .date, .time, .published, span').text().trim();
+                const dateMatch = (timeText + ' ' + $parent.text()).match(/\b\d{1,2}\.\s*\d{1,2}\.\s*\d{4}\b/);
 
-            const dateElement = $(element).find('time, .date, .post-date').first();
-            let date = dateElement.text().trim() || '10.10.2026';
+                if (dateMatch) {
+                    dateStr = dateMatch[0].replace(/\s+/g, '');
+                } else {
+                    // Если дата на главной не указана явно, ставим дату сканирования
+                    const now = new Date();
+                    const d = String(now.getDate()).padStart(2, '0');
+                    const m = String(now.getMonth() + 1).padStart(2, '0');
+                    dateStr = `${d}.${m}.${now.getFullYear()}`;
+                }
 
-            if (title.length > 5) {
-                articles.push({
-                    title,
-                    desc: desc.length > 150 ? desc.substring(0, 150) + '...' : desc,
-                    link,
-                    tag: 'EHÚTNÍK / TŘINEC',
-                    date
-                });
+                // Получаем описание из контейнера
+                let desc = $parent.find('p, .excerpt, .desc').not($link).text().trim();
+                if (!desc || desc === title) {
+                    desc = 'Aktuální zpráva z regionu Třinecko na eHutník.cz.';
+                }
+
+                // Убираем дубликаты новостей
+                const isDuplicate = articles.some(item => item.title === title || item.link === href);
+                if (!isDuplicate && articles.length < 20) {
+                    articles.push({
+                        title,
+                        desc: desc.length > 160 ? desc.substring(0, 160) + '...' : desc,
+                        link: href,
+                        tag: 'EHÚTNÍK / REGION',
+                        date: dateStr
+                    });
+                }
             }
         });
 
@@ -53,7 +75,7 @@ module.exports = async (req, res) => {
     } catch (error) {
         return res.status(500).json({ 
             success: false, 
-            error: 'Failed to fetch news from ehutnik.cz',
+            error: 'Не удалось распарсить ehutnik.cz',
             details: error.message 
         });
     }
