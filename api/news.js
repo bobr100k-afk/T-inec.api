@@ -10,7 +10,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        // Официальный, стабильный RSS-канал iDNES (Острава / Тшинец)
+        // Официальный RSS-канал регионa (Острава, Тшинец) с новостями, транспортом и событиями
         const { data } = await axios.get('https://servis.idnes.cz/rss.aspx?c=ostrava', {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -31,7 +31,7 @@ module.exports = async (req, res) => {
             let desc = $item.find('description').text().replace(/<\/?[>]+(>\vert{}$)/g, "").trim();
 
             if (!desc) {
-                desc = "Aktuální zpravodajství z regionu.";
+                desc = "Aktuální zpravodajství a doprava z regionu.";
             }
 
             // Форматируем дату из RSS
@@ -58,7 +58,7 @@ module.exports = async (req, res) => {
                     title,
                     desc: desc.length > 150 ? desc.substring(0, 150) + '...' : desc,
                     link,
-                    tag: 'IDNES / OSTRAVA & TŘINEC',
+                    tag: 'IDNES / DOPRAVA & REGION',
                     date: dateStr
                 });
             }
@@ -69,7 +69,7 @@ module.exports = async (req, res) => {
     } catch (error) {
         return res.status(500).json({ 
             success: false, 
-            error: 'Failed to fetch RSS', 
+            error: 'Failed to fetch RSS news', 
             details: error.message 
         });
     }
